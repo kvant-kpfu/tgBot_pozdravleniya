@@ -2,7 +2,7 @@
 import random
 import time
 import math
-
+#тута цу ацруа шгцуараур
 screen = turtle.Screen()
 shmelev = turtle.Turtle()
 screen.tracer(0)
@@ -20,7 +20,7 @@ pen.speed(0)
 pen.color("black")
 pen.penup()
 pen.hideturtle()
-pen.goto(330, 300)
+pen.goto(330, 300)bh
 
 def setup_score_display():
     score_display = turtle.Turtle()
