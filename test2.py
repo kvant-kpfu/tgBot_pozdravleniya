@@ -20,7 +20,7 @@ pen.speed(0)
 pen.color("black")
 pen.penup()
 pen.hideturtle()
-pen.goto(330, 310)
+pen.goto(330, 300)
 
 def setup_score_display():
     score_display = turtle.Turtle()
