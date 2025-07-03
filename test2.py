@@ -1,4 +1,4 @@
-import turtle
+﻿import turtle
 import random
 import time
 import math
@@ -181,7 +181,13 @@ def clicked2():
     quit()
 
 if  __name__== '__main__': #первично вызываем главное окно при включении программы
-    main_window()
+
+
+
+
+
+
+main_window()
 
     
 screen.update()
