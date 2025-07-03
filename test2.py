@@ -12,7 +12,7 @@ shmelev.shape("circle")
 shmelev.color('yellow')
 deti = []
 screen.setup(width=700, height=700)
-screen.title("ШМЕЛЁВ НЕ СПИТ")
+screen.title("ШМЕЛЁВ НЕ СПИТ НИКОГДА")
 score = 0
 start = time.time()
 pen = turtle.Turtle()
