@@ -1,195 +1,133 @@
-﻿import turtle
-import random
-import time
-import math
+import asyncio
+import logging
+import os
+from datetime import datetime
+from aiogram import Bot, Dispatcher, types, F
+from aiogram.filters.command import Command
+from aiogram.utils.keyboard import ReplyKeyboardBuilder, InlineKeyboardBuilder
+from dotenv import load_dotenv  
 
-screen = turtle.Screen()
-shmelev = turtle.Turtle()
-screen.tracer(0)
-shmelev.penup()
-shmelev.speed(0)
-shmelev.shape("circle")
-shmelev.color('yellow')
-deti = []
-screen.setup(width=700, height=700)
-screen.title("ШМЕЛЁВ НЕ СПИТ")
-score = 0
-start = time.time()
-pen = turtle.Turtle()
-pen.speed(0)
-pen.color("black")
-pen.penup()
-pen.hideturtle()
-pen.goto(330, 310)
+load_dotenv()  
+TOKEN = os.getenv('BOT_TOKEN')  
 
-def setup_score_display():
-    score_display = turtle.Turtle()
-    score_display.hideturtle()
-    score_display.penup()
-    score_display.goto(-222, 310)
- 
-    def update_score():
-        score_display.clear()
-        score_display.write(f"Ваше очко: {score}", align="center", font=("Arial", 20, "normal"))
-        screen.ontimer(update_score, 100) 
+# Включаем логирование
+logging.basicConfig(level=logging.INFO)
+bot = Bot(token=TOKEN)
+dp = Dispatcher()
 
-    update_score()
+# Хранилище для дней рождения (в реальном боте лучше использовать БД)
+birthdays = {}
 
-setup_score_display()
+# Главное меню с Reply-кнопками
+def get_main_menu():
+    builder = ReplyKeyboardBuilder()
+    builder.add(
+        types.KeyboardButton(text="Установить ДР"),
+        types.KeyboardButton(text="Сколько до ДР?"),
+        types.KeyboardButton(text="Изменить дату"),
+        types.KeyboardButton(text="Помощь")
+    )
+    builder.adjust(2)
+    return builder.as_markup(resize_keyboard=True)
 
-def spawnRebenok():
-    for i in range(random.randrange(1, 2)):
-        reb = turtle.Turtle()
-        reb.shape("square")
-        reb.color("green")
-        reb.speed(0)
-        reb.shapesize(stretch_wid = 0.5, stretch_len = 0.5)
-        reb.dx = random.randrange(-20, 20)/75
-        reb.dy = random.randrange(-20, 20)/75
-        reb.penup()
-        x = random.randrange(-300, 300)
-        y = random.randrange(-300, 300)
-        reb.goto(x, y)
-        deti.append(reb)
-spawnRebenok()
-count_step = 0
+# Хэндлер на команду /start
+@dp.message(Command("start"))
+async def cmd_start(message: types.Message):
+    await message.answer(
+        "Привет! Я бот для отслеживания дней рождения! 🎂\n"
+        "Выбери действие в меню:",
+        reply_markup=get_main_menu()
+    )
 
-highlighting = turtle.Turtle()
-highlighting.ht()
-highlighting.penup()
-highlighting.setpos(305, 305)
-highlighting.pendown()
-for i in range(4): 
-    highlighting.forward(-610) 
-    highlighting.right(270)
 
-highlighting.ht()
 
-def move_forward():
-  y = shmelev.ycor()
-  y += 20
-  shmelev.sety(y)
-   
+async def generate_calendar(year=None, month=None):
+    now = datetime.now()
+    if year is None:
+        year = now.year
+    if month is None:
+        month = now.month
+    
 
-def move_backword():
-  y = shmelev.ycor()
-  y += -20
-  shmelev.sety(y)
-  
-def turn_left():
-  x = shmelev.xcor()
-  x += -20
-  shmelev.setx(x)
-def turn_right():
-  x = shmelev.xcor()
-  x += 20
-  shmelev.setx(x)
-screen.listen()
-screen.onkeypress(move_forward, "w")
-screen.onkeypress(move_backword, "s")
-screen.onkeypress(turn_left, "a")
-screen.onkeypress(turn_right, "d")
-pen.clear()
+@dp.message(lambda message: message.text == "Изменить дату")
+async def change_date_button(message: types.Message):
+    keyboard = await generate_calendar()
+    await message.answer("Выберите новую дату рождения: Например: 15.05.1990", reply_markup=keyboard)
 
-def checking(figura):
-  if figura.xcor() > 300:
-    figura.setx(-300)
+# Хэндлер на команду /help
+@dp.message(Command("help"))
+async def cmd_help(message: types.Message):
+    await message.answer(
+        "📌 Доступные команды:\n"
+        "/start - начать работу с ботом\n"
+        "/help - получить справку\n\n"
+        "Кнопки:\n"
+        "«Установить ДР» - записать дату рождения\n"
+        "«Сколько до ДР?» - узнать сколько дней осталось\n"
+        "«Изменить дату» - посмотреть свою дату рождения\n"
+        "«Помощь» - эта справка"
+    )
 
-  if figura.xcor() < -300:
-    figura.setx(300)
+# Обработчик кнопки "Установить ДР"
+@dp.message(F.text == "Установить ДР")
+async def set_birthday(message: types.Message):
+    # Здесь можно реализовать ввод даты через календарь или текстом
+    await message.answer(
+        "Введи свою дату рождения в формате ДД.ММ.ГГГГ\n"
+        "Например: 15.05.1990"
+    )
 
-  if figura.ycor() > 300:
-    figura.sety(-300)
 
-  if figura.ycor() < -300:
-    figura.sety(300)
+# Обработчик ввода даты рождения
+@dp.message(F.text.regexp(r'^\d{2}\.\d{2}\.\d{4}$'))
+async def process_birthday(message: types.Message):
+    try:
+        day, month, year = map(int, message.text.split('.'))
+        birthdays[message.from_user.id] = datetime(year, month, day)
+        await message.answer(
+            f"✅ Дата рождения {day:02d}.{month:02d}.{year} сохранена!",
+            reply_markup=get_main_menu()
+        )
+    except ValueError:
+        await message.answer("❌ Неверная дата! Попробуй еще раз.")
 
-def get_distance_shmelev_reb(reb):
-    x_distance = (shmelev.xcor() - reb.xcor()) ** 2
-    y_distance = (shmelev.ycor() - reb.ycor()) ** 2
-    return (x_distance + y_distance) ** 0.5
-
-def checker_stolknovenia(reb):
-    if get_distance_shmelev_reb(reb) <= 10:
-        return True
+# Обработчик кнопки "Сколько до ДР?"
+@dp.message(F.text == "Сколько до ДР?")
+async def days_until_birthday(message: types.Message):
+    if message.from_user.id not in birthdays:
+        await message.answer("Сначала установи свою дату рождения!")
+        return
+    
+    today = datetime.now()
+    bday = birthdays[message.from_user.id]
+    next_bday = datetime(today.year, bday.month, bday.day)
+    
+    if today > next_bday:
+        next_bday = datetime(today.year + 1, bday.month, bday.day)
+    
+    delta = (next_bday - today).days
+    
+    if delta == 0:
+        await message.answer("🎉 Сегодня твой День Рождения! Поздравляю! 🎂")
     else:
-        return False
+        await message.answer(f"До твоего дня рождения осталось {delta} дней!")
 
-game_over = False
-step_over = False
-while not game_over:
-    egg = time.time()
-    pen.clear()
-    pen.write(f"Время: {round(egg - start, 1)} сек", align="right", font=("Arial", 24, "normal"))
-    
-    checking(shmelev)
-    screen.update()
-    count_step += 1
-    for reb in deti:
-        checking(reb)
-        if checker_stolknovenia(reb):
-            ind = deti.index(reb)
-            deti = deti[0:ind] + deti[ind + 1:]
-            reb.ht()
-            score += 1
-        reb.setpos(reb.xcor() + reb.dx, reb.ycor() + reb.dy)
-        if count_step == 7500:
-            reb.dx = random.randrange(-20, 20)/75
-            reb.dy = random.randrange(-20, 20)/75
-            step_over = True
-    
-    if step_over is True:
-        count_step = 0
-    if len(deti) == 0:
-        game_over = True
-        end = time.time()
-        pen.clear()
-        screen.bgcolor("green")
-        
-        win = turtle.Turtle()
-        win.ht()
-        win.penup()
-        win.goto(0, 0)
-        win.write("ПОБЕДА!!!\n", align="center", font=("Arial", 40, "normal"))
-        length = round(end - start,3)
-        win.write(f"{length} СЕКУНД", align="center", font=("Times", 18, "normal"))
+# Обработчик кнопки "Помощь"
+@dp.message(F.text == "Помощь")
+async def help_button(message: types.Message):
+    await cmd_help(message)
 
-        
-def main_window(): #функция созданий главного окна, здесь лежит весь код окна: кнопки, текст и т.д.
-    global window
-    window= Tk() #создание окна
-    window.title('Перезапуск') #заголовок окна
-    window.geometry('400x400') #размеры окна
-    lbl = Label(window, text='Игра закончилась,\n хотие ли продолжить?', font=('Arial Bold', 14))
-    lbl.grid(column=0, row=0)
-
-    # вызов функции clicked() при нажатии кнопки
-    btn1 = Button(window, text='да', command=clicked1)
-    btn2 = Button(window, text='нет', command=clicked2)
-
-    btn1.grid(column=0, row=1)
-    btn2.grid(column=1, row=1)
-    window.mainloop()  # бесконечный цикл окна, окно ждёт нажатий
-
-def clicked1(): #функция убивает главное окно, затем снова вызывает его и оно вновь появляется
-    time.sleep(10)
-    window.destroy()
-    main_window()
-    reset()
-
-def clicked2():
-    quit()
-
-if  __name__== '__main__': #первично вызываем главное окно при включении программы
+# Обработчик неизвестных команд
+@dp.message()
+async def unknown_message(message: types.Message):
+    await message.answer("Я не понимаю эту команду. Используй кнопки меню или /help")
 
 
 
+# Запуск бота
+async def main():
+    await dp.start_polling(bot)
 
 
-
-main_window()
-
-    
-screen.update()
-
-screen.mainloop()
+if __name__ == "__main__":
+    asyncio.run(main())
