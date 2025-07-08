@@ -1,0 +1,183 @@
+import asyncio
+import logging
+import os
+from aiogram import Bot, Dispatcher, types
+from aiogram.filters.command import Command
+from aiogram.utils.keyboard import ReplyKeyboardBuilder, InlineKeyboardBuilder
+from dotenv import load_dotenv 
+from datetime import datetime, timedelta
+from dateutil.relativedelta import relativedelta
+
+
+load_dotenv()  
+TOKEN = os.getenv('BOT_TOKEN')  
+
+date_today = datetime.today()
+
+# Включаем логирование
+logging.basicConfig(level=logging.INFO)
+bot = Bot(token=TOKEN)
+dp = Dispatcher()
+
+# Хранилище данных пользователей
+user_data = {}
+
+# Главное меню с Reply-кнопками
+def get_main_menu():
+    builder = ReplyKeyboardBuilder()
+    builder.add(
+        types.KeyboardButton(text="Установить ДР"),
+        types.KeyboardButton(text="Сколько до ДР?"),
+        types.KeyboardButton(text="Изменить дату"),
+        types.KeyboardButton(text="Помощь")
+    )
+    builder.adjust(2)
+    return builder.as_markup(resize_keyboard=True)
+
+# Генерация календаря
+async def generate_calendar(year=None, month=None):
+    now = datetime.now()
+    if year is None:
+        year = now.year
+    if month is None:
+        month = now.month
+    
+    keyboard = InlineKeyboardBuilder()
+    
+    # Заголовок с месяцем и годом + кнопки навигации
+    months = ["Янв", "Фев", "Мар", "Апр", "Май", "Июн", 
+              "Июл", "Авг", "Сен", "Окт", "Ноя", "Дек"]
+    
+    keyboard.row(
+        types.InlineKeyboardButton(text="←", callback_data=f"prev_month_{year}_{month}"),
+        types.InlineKeyboardButton(text=f"{months[month-1]} {year}", callback_data="ignore"),
+        types.InlineKeyboardButton(text="→", callback_data=f"next_month_{year}_{month}"),
+        width=3
+    )
+    
+    # Дни недели
+    week_days = ["Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс"]
+    buttons = [types.InlineKeyboardButton(text=day, callback_data="ignore") for day in week_days]
+    keyboard.row(*buttons)
+    
+    # Даты месяца
+    first_day = datetime(year, month, 1)
+    last_day = (first_day + relativedelta(months=1)) - timedelta(days=1)
+    
+    # Пустые кнопки для дней из предыдущего месяца
+    for _ in range((first_day.weekday()) % 7):
+        keyboard.add(types.InlineKeyboardButton(text=" ", callback_data="ignore"))
+    
+    # Кнопки с датами
+    for day in range(1, last_day.day + 1):
+        keyboard.add(types.InlineKeyboardButton(
+            text=str(day), 
+            callback_data=f"select_{year:02d}-{month:02d}-{day:02d}")
+        )
+    
+    # Кнопка "Сегодня"
+    keyboard.row(types.InlineKeyboardButton(
+        text="Сегодня", 
+        callback_data="select_today")
+    )
+    
+    return keyboard.as_markup()
+
+# Хэндлер на команду /help
+@dp.message(Command("help"))
+async def cmd_help(message: types.Message):
+    await message.answer(
+        "📌 Доступные команды:\n"
+        "/start - начать работу с ботом\n"
+        "/help - получить справку\n\n"
+        "Кнопки меню:\n"
+        "«Установить ДР» - записать дату рождения\n"
+        "«Сколько до ДР?» - узнать сколько дней осталось\n"
+        "«Изменить дату» - изменить дату рождения\n"
+        "«Помощь» - эта справка",
+        reply_markup=get_main_menu()
+    )
+
+# Обработчик кнопки "Помощь"
+@dp.message(lambda message: message.text == "Помощь")
+async def help_button(message: types.Message):
+    await cmd_help(message)
+
+
+# Обработчик кнопки "Изменить дату"
+@dp.message(lambda message: message.text == "Изменить дату")
+async def change_date_button(message: types.Message):
+    keyboard = await generate_calendar()
+    await message.answer("Выберите новую дату рождения:", reply_markup=keyboard)
+
+# Обработчик кнопки "Установить ДР"
+@dp.message(lambda message: message.text == "Установить ДР")
+async def set_birthday_button(message: types.Message):
+    user_data[message.from_user.id] = {"waiting_for_birthday": True}
+    await message.answer("Введите дату рождения в формате ДД.ММ (например, 15.05):")
+
+# Навигация по календарю
+@dp.callback_query(lambda c: c.data.startswith(('prev_month_', 'next_month_')))
+async def process_calendar_navigation(callback_query: types.CallbackQuery):
+    _, _, year, month = callback_query.data.split('_')
+    year = int(year)
+    month = int(month)
+    
+    if callback_query.data.startswith('prev_month_'):
+        new_date = datetime(year, month, 1) - relativedelta(months=1)
+    else:
+        new_date = datetime(year, month, 1) + relativedelta(months=1)
+    
+    keyboard = await generate_calendar(new_date.year, new_date.month)
+    await callback_query.message.edit_reply_markup(reply_markup=keyboard)
+    await callback_query.answer()
+
+
+# Выбор даты в календаре
+@dp.callback_query(lambda c: c.data.startswith('select_'))
+async def process_date_selection(callback_query: types.CallbackQuery):
+    user_id = callback_query.from_user.id
+    
+    if callback_query.data == 'select_today':
+        selected_date = datetime.now()
+    else:
+        date_str = callback_query.data.split('_')[1]
+        selected_date = datetime.strptime(date_str, "%Y-%m-%d")
+    
+    # Сохраняем только день и месяц (без года)
+    user_data[user_id] = {
+        "birthday": (selected_date.day, selected_date.month),
+        "waiting_for_birthday": False
+    }
+    
+    await callback_query.answer(f"Дата рождения установлена: {selected_date.day}.{selected_date.month}")
+    await callback_query.message.answer(
+        f"✅ Дата рождения изменена на: {selected_date.day}.{selected_date.month}",
+        reply_markup=get_main_menu()
+    )
+    await callback_query.message.delete()
+
+@dp.message(lambda message: message.text == "Сколько до ДР?")
+async def calculate_date(message: types.Message):
+    user_id = message.from_user.id
+    
+    if user_id in user_data and user_data[user_id].get("waiting_for_birthday"):
+        # try:
+        day, month = user_data[user_id]["birthday"] 
+        if 1 <= day <= 31 and 1 <= month <= 12:
+            await message.answer("До твоего др осталось:", day, month - date_today)
+                
+        if date_today == user_data:
+            await message.answer("У тебя день рождения!")
+        if date_today > user_data:
+            await message.answer("До твоего др осталось:", day, month - date_today)
+                
+               
+        
+      
+# Запуск бота
+async def main():
+    await dp.start_polling(bot)
+
+if __name__ == "__main__":
+    asyncio.run(main())
